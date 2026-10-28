@@ -748,21 +748,27 @@ export default abstract class BaseCalendarService implements Calendar {
           // For weekly rules without BYDAY, the weekday comes from DTSTART, so passing a window date
           // shifts the occurrences to the queried weekday and breaks COUNT rules.
           // Iterate from the original event.startDate with a safe iteration cap.
-          let maxIterations = 2000;
+          let maxIterations = 5000;
           const iterator = event.iterator();
-          let current: ICAL.Time;
+          let current: ICAL.Time | null = null;
           let currentEvent: ReturnType<typeof event.getOccurrenceDetails> | undefined;
           let currentStart: ReturnType<typeof dayjs> | null = null;
           let currentError: string | undefined;
 
           while (
             maxIterations > 0 &&
-            (currentStart === null || currentStart.isAfter(end) === false) &&
-            // this iterator was poorly implemented, normally done is expected to be
-            // returned
-            (current = iterator.next())
+            (currentStart === null || currentStart.isAfter(end) === false)
           ) {
             maxIterations -= 1;
+
+            try {
+              current = iterator.next();
+            } catch (error) {
+              logger.warn("Error advancing recurring event iterator:", error);
+              break;
+            }
+
+            if (!current) break;
 
             try {
               // @see https://github.com/mozilla-comm/ical.js/issues/514
@@ -773,7 +779,7 @@ export default abstract class BaseCalendarService implements Calendar {
                 this.log.error("error", error);
               }
             }
-            if (!currentEvent) return;
+            if (!currentEvent) break;
             // do not mix up caldav and icalendar! For the recurring events here, the timezone
             // provided is relevant, not as pointed out in https://datatracker.ietf.org/doc/html/rfc4791#section-9.6.5
             // where recurring events are always in utc (in caldav!). Thus, apply the time zone here.
@@ -792,7 +798,7 @@ export default abstract class BaseCalendarService implements Calendar {
             }
           }
           if (maxIterations <= 0) {
-            logger.warn("Could not find any occurrence for recurring event in 2000 iterations");
+            logger.warn("Could not find all occurrences for recurring event within 5000 iterations");
           }
           return;
         }
